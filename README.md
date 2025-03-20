@@ -1,6 +1,6 @@
 # Noodle
 <p align="center">
-<img align="center" width="150px" src="https://raw.githubusercontent.com/world-in-progress/noodle/main/doc/images/logo.jpg">
+<img align="center" width="150px" src="https://raw.githubusercontent.com/world-in-progress/noodle/main/doc/images/logo.png">
 </p>
 
 Noodle is a node-based geographic resource encapsulation, sharing and application solution.
