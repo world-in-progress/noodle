@@ -1,0 +1,19 @@
+syntax = "proto3";
+
+package execute;
+
+option go_package = "./proto";
+
+service ExecuteService {
+    rpc Execute (ExecuteRequest) returns (ExecuteResponse) {}
+}
+
+message ExecuteRequest {
+    string body = 1;
+    string service_ip = 2;
+}
+
+message ExecuteResponse {
+    string result = 1;
+    string error = 2;
+}
