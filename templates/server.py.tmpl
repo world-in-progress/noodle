@@ -1,0 +1,36 @@
+import subprocess
+from concurrent import futures
+import grpc
+from proto import execute_pb2
+from proto import execute_pb2_grpc
+
+class ExecuteServiceServicer(execute_pb2_grpc.ExecuteServiceServicer):
+    def Execute(self, request, context):
+        try:
+            body = request.body if request.body else ""
+            cmd = ['python', 'script.py']
+            if body:
+                cmd.append(body)
+            
+            result = subprocess.run(cmd, capture_output=True, text=True)
+            if result.returncode != 0:
+                context.set_code(grpc.StatusCode.INTERNAL)
+                context.set_details(f"Error: {result.stderr}")
+                return execute_pb2.ExecuteResponse()
+            
+            return execute_pb2.ExecuteResponse(result=result.stdout)
+        except Exception as e:
+            context.set_code(grpc.StatusCode.INTERNAL)
+            context.set_details(f"Error: {str(e)}")
+            return execute_pb2.ExecuteResponse()
+
+def serve():
+    server = grpc.server(futures.ThreadPoolExecutor(max_workers=10))
+    execute_pb2_grpc.add_ExecuteServiceServicer_to_server(ExecuteServiceServicer(), server)
+    server.add_insecure_port('[::]:50051')  # 监听 50051 端口
+    print("gRPC server starting on port 50051...")
+    server.start()
+    server.wait_for_termination()
+
+if __name__ == '__main__':
+    serve()
