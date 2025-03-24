@@ -3,7 +3,7 @@
 <img align="center" width="150px" src="https://raw.githubusercontent.com/world-in-progress/noodle/main/doc/images/logo.png">
 </p>
 
-Noodle is a node-based geographic resource encapsulation, sharing and application solution.
+Noodle (Node-Oriented Open Data Linking Environment) is a node-based geographic resource encapsulation, sharing and application solution.
 
 ## How to Launch Noodle
 
@@ -19,7 +19,7 @@ cd ..
 go run main.go
 ```
 
-If you want to deploy Noodle, you could just build the program directly and run the executable file.
+If you want to deploy Noodle, you could just build the program directly after the first step, and run the executable file.
 ```
 go build -o noodle .
 ./noodle

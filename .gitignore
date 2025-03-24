@@ -38,3 +38,6 @@ go.work.sum
 tmp
 *.pb.go
 noodle
+
+# Test
+resource

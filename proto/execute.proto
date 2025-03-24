@@ -5,12 +5,12 @@ package execute;
 option go_package = "./proto";
 
 service ExecuteService {
-    rpc Execute (ExecuteRequest) returns (ExecuteResponse) {}
+    rpc Execute (ExecuteRequest) returns (stream ExecuteResponse) {}
 }
 
 message ExecuteRequest {
     string body = 1;
-    string service_ip = 2;
+    string service_name = 2;
 }
 
 message ExecuteResponse {

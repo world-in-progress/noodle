@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"io"
 	"net"
 	"os"
 	"os/signal"
@@ -25,21 +26,35 @@ type server struct {
 	pb.UnimplementedExecuteServiceServer
 }
 
-func (s *server) Execute(ctx context.Context, req *pb.ExecuteRequest) (*pb.ExecuteResponse, error) {
+func (s *server) Execute(req *pb.ExecuteRequest, stream pb.ExecuteService_ExecuteServer) error {
 	// Get gRPC client of component
-	conn, err := getGrpClient(req.ServiceIp)
+	conn, err := getGrpClient(req.ServiceName)
 	if err != nil {
-		return &pb.ExecuteResponse{Error: fmt.Sprintf("Failed to connect to component: %v", err)}, nil
+		return stream.Send(&pb.ExecuteResponse{Error: fmt.Sprintf("Failed to connect to component: %v", err)})
 	}
 
 	// Call component service
 	client := pb.NewExecuteServiceClient(conn)
-	resp, err := client.Execute(ctx, &pb.ExecuteRequest{Body: req.Body})
+	componentStream, err := client.Execute(context.Background(), &pb.ExecuteRequest{Body: req.Body})
 	if err != nil {
-		return &pb.ExecuteResponse{Error: fmt.Sprintf("Failed to call component service: %v", err)}, nil
+		return stream.Send(&pb.ExecuteResponse{Error: fmt.Sprintf("Failed to call component service: %v", err)})
 	}
 
-	return &pb.ExecuteResponse{Result: resp.Result, Error: resp.Error}, nil
+	for {
+		resp, err := componentStream.Recv()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return stream.Send(&pb.ExecuteResponse{Error: fmt.Sprintf("Stream error from component: %v", err)})
+		}
+
+		if err := stream.Send(&pb.ExecuteResponse{Result: resp.Result, Error: resp.Error}); err != nil {
+			return fmt.Errorf("failed to send stream response: %v", err)
+		}
+	}
+
+	return nil
 }
 
 func main() {
@@ -72,96 +87,34 @@ func main() {
 	// Block the main thread and wait for the exit signal
 	<-sigChan
 	fmt.Println("Received shutdown signal, stopping Noodle Dispatcher...")
+	for _, conn := range grpcClients {
+		conn.Close()
+	}
 	grpcServer.GracefulStop()
 	fmt.Println(" Noodle Dispatcher stopped")
 }
 
-// func main() {
-// 	r := gin.New()
-// 	r.Use(gin.Logger(), gin.Recovery())
-
-// 	r.POST("/execute", func(c *gin.Context) {
-// 		var req ExecuteRequest
-// 		if err := c.ShouldBindJSON(&req); err != nil {
-// 			c.JSON(400, gin.H{"error": "Invalid request format"})
-// 			return
-// 		}
-
-// 		if req.ServiceIP == "" {
-// 			c.JSON(400, gin.H{"error": "Missing service_ip"})
-// 			return
-// 		}
-
-// 		// Making gRPC calls asynchronously
-// 		resultChain := make(chan ExecuteResponse, 1)
-// 		go func() {
-// 			result, err := callComponentService(req)
-// 			resultChain <- ExecuteResponse{Result: result, Error: err}
-// 		}()
-
-// 		// Wait for result
-// 		select {
-// 		case res := <-resultChain:
-// 			if res.Error != nil {
-// 				c.JSON(500, gin.H{"error": res.Error.Error()})
-// 				return
-// 			}
-// 			c.JSON(200, gin.H{"status": "success", "result": res.Result})
-// 		case <-time.After(500 * time.Second):
-// 			c.JSON(504, gin.H{"error": "Request timeout"})
-// 		}
-// 	})
-
-// 	// Create HTTP server
-// 	server := &http.Server{
-// 		Addr:           fmt.Sprintf(":%d", NOODLE_DISPATCHER_PORT),
-// 		Handler:        r,
-// 		ReadTimeout:    10 * time.Second,
-// 		WriteTimeout:   10 * time.Second,
-// 		IdleTimeout:    60 * time.Second,
-// 		MaxHeaderBytes: 1 << 30, // 1GB
-// 	}
-
-// 	// Run server
-// 	fmt.Printf("Starting server on :%d\n", NOODLE_DISPATCHER_PORT)
-// 	if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-// 		fmt.Printf("Failed to run server of Noodle Dispatcher in K8s: %v\n", err)
-// 	}
-// }
-
-// func callComponentService(req ExecuteRequest) (string, error) {
-// 	// Connect gRPC client
-// 	conn, err := getGrpClient(req.ServiceIP)
-// 	if err != nil {
-// 		return "", err
-// 	}
-
-// 	// Send gRPC request
-// 	client := pb.NewExecuteServiceClient(conn)
-// 	resp, err := client.Execute(context.Background(), &pb.ExecuteRequest{Body: req.Body})
-// 	if err != nil {
-// 		return "", fmt.Errorf("failed to call component service: %v", err)
-// 	}
-
-// 	return resp.Result, nil
-// }
-
-func getGrpClient(serviceIP string) (*grpc.ClientConn, error) {
-	conn, exists := grpcClients[serviceIP]
+func getGrpClient(serviceName string) (*grpc.ClientConn, error) {
+	target := fmt.Sprintf("%s:50051", serviceName)
+	conn, exists := grpcClients[target]
 	if !exists {
 		var err error
 		conn, err = grpc.NewClient(
-			serviceIP+":50051",
+			target,
 			grpc.WithTransportCredentials(insecure.NewCredentials()),
+			grpc.WithDefaultCallOptions(grpc.WaitForReady(true)),
 			grpc.WithKeepaliveParams(keepalive.ClientParameters{
-				Time:    10 * time.Second,
-				Timeout: 3 * time.Second,
+				Time:    60 * time.Second,
+				Timeout: 60 * time.Second,
 			}),
+			grpc.WithDefaultServiceConfig(`{
+				"loadBalancingPolicy": "round_robin"
+			}`),
 		)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create gRPC client: %v", err)
 		}
-		grpcClients[serviceIP] = conn
+		grpcClients[target] = conn
 	}
 	return conn, nil
 }

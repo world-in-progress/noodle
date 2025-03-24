@@ -1,0 +1,56 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{.ServiceName}}
+  labels:
+    app: {{.ServiceName}}
+spec:
+  replicas: {{.Replicas}}
+  selector:
+    matchLabels:
+      app: {{.ServiceName}}
+  template:
+    metadata:
+      labels:
+        app: {{.ServiceName}}
+    spec:
+      containers:
+      - name: {{.ServiceName}}
+        image: {{.ImageTag}}
+        ports:
+        - containerPort: 50051
+        volumeMounts:
+        - name: workspace-volume
+          mountPath: /app/workspace
+        - name: resource-volume
+          mountPath: /app/resources
+          readOnly: true
+        resources:
+          limits:
+            cpu: "0.5"
+            memory: "512Mi"
+          requests:
+            cpu: "0.2"
+            memory: "256Mi"
+      volumes:
+      - name: workspace-volume
+        hostPath:
+          path: {{.WorkspacePath}}
+          type: DirectoryOrCreate
+      - name: resource-volume
+        hostPath:
+          path: {{.ResourceDir}}
+          type: DirectoryOrCreate
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{.ServiceName}}
+spec:
+  selector:
+    app: {{.ServiceName}}
+  ports:
+    - port: 50051
+      targetPort: 50051
+      protocol: TCP
+  type: ClusterIP
